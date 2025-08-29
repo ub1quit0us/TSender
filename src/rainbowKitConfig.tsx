@@ -26,6 +26,7 @@ export default getDefaultConfig({
   appName: 'TSender',
   projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID!,
   // EDIT CHAINS BELOW
-  chains: [mainnet, polygon, optimism, arbitrum, base, anvil, sonic],
+  // chains: [mainnet, polygon, optimism, arbitrum, base, anvil, sonic],
+  chains: [mainnet, anvil],
   ssr: false, // If your dApp uses server side rendering (SSR)
 });
