@@ -17,13 +17,13 @@ export default function InputField({
   error,
   type = 'text'
 }: InputFieldProps) {
-  const commonClasses = `w-full px-4 py-3 border rounded-md focus:ring-2 focus:ring-blue-600 focus:border-blue-600 outline-none transition-colors ${
-    error ? 'border-red-600 bg-red-50' : 'border-gray-400'
+  const commonClasses = `w-full px-4 py-3 border rounded-md focus:ring-2 focus:ring-blue-600 focus:border-blue-600 outline-none transition-colors text-gray-900 placeholder-gray-500 ${
+    error ? 'border-red-600 bg-red-50' : 'border-gray-300 hover:border-gray-400'
   }`;
 
   return (
     <div className="mb-6">
-      <label className="block text-sm font-semibold text-gray-900 mb-2">
+      <label className="block text-sm font-semibold text-gray-800 mb-2">
         {label}
       </label>
       {type === 'textarea' ? (
@@ -44,7 +44,7 @@ export default function InputField({
         />
       )}
       {error && (
-        <p className="mt-2 text-sm font-medium text-red-700 bg-red-100 px-3 py-2 rounded-md border border-red-200">
+        <p className="mt-2 text-sm font-medium text-red-800 bg-red-50 px-3 py-2 rounded-md border border-red-200">
           {error}
         </p>
       )}

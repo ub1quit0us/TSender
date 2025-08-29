@@ -1,7 +1,13 @@
 "use client"
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import InputField from "@/components/ui/inputFields"
+import { chainsToTSender, tsenderAbi, erc20Abi } from '@/constants'
+import { useChainId, useConfig, useAccount } from 'wagmi'
+import { readContract } from '@wagmi/core'
+import { config } from 'process'
+import { ChainDisconnectedError } from 'viem'
+import { calculateTotal } from '@/utils'
 
 export default function AirdropForm() {
   const [tokenAddress, setTokenAddress] = useState('')
@@ -13,8 +19,27 @@ export default function AirdropForm() {
     amounts: ''
   })
   const [isLoading, setIsLoading] = useState(false)
+  const chainId = useChainId()
+  const config = useConfig()
+  const account = useAccount()
+  const total: number = useMemo(() => calculateTotal(amounts), [amounts])
 
+  async function getApprovedAmount(tSenderAddress: string | null): Promise<number> {
+    if (!tSenderAddress) {
+      alert("No address found, please use a supported chain.")
+      return 0
+    }
 
+    const response = await readContract(config, {
+      abi: erc20Abi,
+      address: tokenAddress as `0x${string}`,
+      functionName: 'allowance',
+      args: [account.address, tSenderAddress as `0x${string}`]
+    });
+    return response as number
+  } 
+
+////////////////////////////// FORMAT VALIDATIONS //////////
 
   // Validate Ethereum address format
   const isValidEthereumAddress = (address: string) => {
@@ -88,6 +113,8 @@ export default function AirdropForm() {
     return isValid;
   };
 
+  ///////////////////////////////////////////////////////////////////////////////////
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
@@ -111,8 +138,15 @@ export default function AirdropForm() {
         
         // Here you would connect to your smart contract
         // await yourContractMethod(tokenAddress, recipientList, amountList);
-        
-        alert('Airdrop would be processed now!');
+
+        const tSenderAddress = chainsToTSender[chainId]["tsender"]
+        const approvedAmount = await getApprovedAmount(tSenderAddress)
+        console.log("Approved amount is: ", approvedAmount)
+
+        if (approvedAmount < total) {
+          
+        } 
+
       } catch (error) {
         console.error('Airdrop failed:', error);
       } finally {
@@ -124,48 +158,48 @@ export default function AirdropForm() {
   };
 
   return (
-    <div className="max-w-3xl mx-auto p-6 bg-white rounded-lg shadow-md border border-gray-500">
-      <div className="text-center mb-8">
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">ERC20 Token Airdrop</h2>
-        <p className="text-gray-700">Send tokens to multiple addresses in one transaction</p>
-      </div>
-      
-      <form onSubmit={handleSubmit}>
-        <InputField
-          label="Token Address"
-          placeholder="e.g., 0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984"
-          value={tokenAddress}
-          onChange={setTokenAddress}
-          error={errors.tokenAddress}
-        />
-        
-        <InputField
-          label="Recipients (separated by commas or new lines)"
-          placeholder="0x742d35Cc6634C0532925a3b844Bc454e4438f44e&#10;0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed"
-          value={recipients}
-          onChange={setRecipients}
-          error={errors.recipients}
-          type="textarea"
-        />
-        
-        <InputField
-          label="Amounts (separated by commas or new lines)"
-          placeholder="10.5&#10;25.0&#10;3.75"
-          value={amounts}
-          onChange={setAmounts}
-          error={errors.amounts}
-          type="textarea"
-        />
-        
-        <button
-          onClick={handleSubmit}
-          type="submit"
-          disabled={isLoading}
-          className="w-full bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-        >
-          {isLoading ? 'Processing...' : 'Send Tokens'}
-        </button>
-      </form>
-    </div>
+    <div className="max-w-3xl mx-auto p-6 bg-white rounded-lg shadow-md border border-gray-200">
+  <div className="text-center mb-8">
+    <h2 className="text-2xl font-bold text-gray-800 mb-2">ERC20 Token Airdrop</h2>
+    <p className="text-gray-600">Send tokens to multiple addresses in one transaction</p>
+  </div>
+  
+  <form onSubmit={handleSubmit}>
+    <InputField
+      label="Token Address"
+      placeholder="e.g., 0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984"
+      value={tokenAddress}
+      onChange={setTokenAddress}
+      error={errors.tokenAddress}
+    />
+    
+    <InputField
+      label="Recipients (separated by commas or new lines)"
+      placeholder="0x742d35Cc6634C0532925a3b844Bc454e4438f44e&#10;0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed"
+      value={recipients}
+      onChange={setRecipients}
+      error={errors.recipients}
+      type="textarea"
+    />
+    
+    <InputField
+      label="Amounts (separated by commas or new lines)"
+      placeholder="10.5&#10;25.0&#10;3.75"
+      value={amounts}
+      onChange={setAmounts}
+      error={errors.amounts}
+      type="textarea"
+    />
+    
+    <button
+      onClick={handleSubmit}
+      type="submit"
+      disabled={isLoading}
+      className="w-full bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+    >
+      {isLoading ? 'Processing...' : 'Send Tokens'}
+    </button>
+  </form>
+</div>
   );
 }
