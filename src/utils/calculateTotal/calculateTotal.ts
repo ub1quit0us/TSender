@@ -3,8 +3,12 @@ export function calculateTotal(amounts: string): number {
         .split(/[\n,]+/)
         .map(amount => amount.trim())
         .filter(amount => amount.length > 0)
-        .map(amount => parseFloat(amount))
-        .filter(amount => !isNaN(amount)); // Add this line to filter out NaN values
+        .map(amount => {
+            const numericString = amount.replace(/[^\d.-]/g, '');
+            const isValidNumber = /^-?\d*\.?\d+$/.test(numericString) && numericString !== '';
+            return isValidNumber ? parseFloat(numericString) : NaN;
+        })
+        .filter(amount => !isNaN(amount));
 
     const totalAmount = amountList.reduce((sum, amount) => sum + amount, 0);
     return totalAmount;
