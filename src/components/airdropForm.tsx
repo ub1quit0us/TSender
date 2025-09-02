@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react'
 import InputField from "@/components/ui/inputFields"
 import { chainsToTSender, tsenderAbi, erc20Abi } from '@/constants'
-import { useChainId, useConfig, useAccount } from 'wagmi'
+import { useChainId, useConfig, useAccount, useReadContract } from 'wagmi'
 import { readContract } from '@wagmi/core'
 import { config } from 'process'
 import { ChainDisconnectedError } from 'viem'
@@ -142,6 +142,8 @@ export default function AirdropForm() {
         const tSenderAddress = chainsToTSender[chainId]["tsender"]
         const approvedAmount = await getApprovedAmount(tSenderAddress)
         console.log("Approved amount is: ", approvedAmount)
+
+        console.log("Total airdrop amount is: ", total)
 
         if (approvedAmount < total) {
           
