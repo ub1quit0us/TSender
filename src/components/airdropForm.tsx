@@ -17,19 +17,17 @@ export default function AirdropForm() {
   const [isLoading, setIsLoading] = useState(false)
   const [tokenDetails, setTokenDetails] = useState<{ symbol?: string; decimals?: number; balance?: bigint }>({})
 
-  // ----------------- Hooks -----------------
   const chainId = useChainId()
   const config = useConfig()
   const account = useAccount()
   const { writeContractAsync } = useWriteContract()
   const total = useMemo(() => calculateTotal(amounts), [amounts])
 
-  // ----------------- Helpers -----------------
   const isValidEthereumAddress = (address: string) => /^0x[a-fA-F0-9]{40}$/.test(address)
   const isValidAmount = (amount: string) => /^\d+(\.\d+)?$/.test(amount) && parseFloat(amount) > 0
   const parseList = (raw: string) => raw.split(/[\n,]+/).map(i => i.trim()).filter(Boolean)
 
-  // ----------------- LocalStorage Persistence -----------------
+  // ----------------- LocalStorage -----------------
   useEffect(() => {
     const saved = localStorage.getItem("airdropForm")
     if (saved) {
@@ -62,27 +60,16 @@ export default function AirdropForm() {
   }
 
   // ----------------- Live Validation -----------------
-  // Token Address
   useEffect(() => {
-    if (!tokenAddress) {
-      setErrors(prev => ({ ...prev, tokenAddress: "" }))
-      setTokenDetails({})
-      return
-    }
-
+    if (!tokenAddress) return setErrors(prev => ({ ...prev, tokenAddress: "" }))
     const timer = setTimeout(async () => {
       if (!isValidEthereumAddress(tokenAddress)) {
         setErrors(prev => ({ ...prev, tokenAddress: "Invalid address format" }))
         setTokenDetails({})
         return
       }
-
       const validERC20 = await isERC20(tokenAddress)
-      setErrors(prev => ({
-        ...prev,
-        tokenAddress: validERC20 ? "" : "Address is not a valid ERC20 token"
-      }))
-
+      setErrors(prev => ({ ...prev, tokenAddress: validERC20 ? "" : "Address is not a valid ERC20 token" }))
       if (validERC20 && account.address) {
         try {
           const normalizedAddress = getAddress(tokenAddress) as `0x${string}`
@@ -93,238 +80,68 @@ export default function AirdropForm() {
           ])
           setTokenDetails({ decimals: Number(decimals), symbol: String(symbol), balance: balance as bigint })
         } catch (err) {
-          console.error("Error fetching token details:", err)
+          console.error(err)
           setTokenDetails({})
         }
-      } else {
-        setTokenDetails({})
-      }
-
-    }, 500)
-
+      } else setTokenDetails({})
+    }, 400)
     return () => clearTimeout(timer)
   }, [tokenAddress, account.address])
 
-  // Recipients
   useEffect(() => {
-    if (!recipients) {
-      setErrors(prev => ({ ...prev, recipients: "" }))
-      return
-    }
-
+    if (!recipients) return setErrors(prev => ({ ...prev, recipients: "" }))
     const timer = setTimeout(() => {
-      const recipientList = parseList(recipients)
-      if (!recipientList.length) {
-        setErrors(prev => ({ ...prev, recipients: "At least one recipient is required" }))
-        return
-      }
-
-      const invalidRecipients = recipientList.filter(r => !isValidEthereumAddress(r))
-      setErrors(prev => ({
-        ...prev,
-        recipients: invalidRecipients.length
-          ? `Invalid address(es): ${invalidRecipients.join(", ")}`
-          : ""
-      }))
-    }, 500)
-
+      const list = parseList(recipients)
+      if (!list.length) return setErrors(prev => ({ ...prev, recipients: "At least one recipient is required" }))
+      const invalid = list.filter(r => !isValidEthereumAddress(r))
+      setErrors(prev => ({ ...prev, recipients: invalid.length ? `Invalid address(es): ${invalid.join(", ")}` : "" }))
+    }, 400)
     return () => clearTimeout(timer)
   }, [recipients])
 
-  // Amounts
   useEffect(() => {
-    if (!amounts) {
-      setErrors(prev => ({ ...prev, amounts: "" }))
-      return
-    }
-
+    if (!amounts) return setErrors(prev => ({ ...prev, amounts: "" }))
     const timer = setTimeout(() => {
-      const amountList = parseList(amounts)
-      if (!amountList.length) {
-        setErrors(prev => ({ ...prev, amounts: "At least one amount is required" }))
-        return
-      }
+      const list = parseList(amounts)
+      if (!list.length) return setErrors(prev => ({ ...prev, amounts: "At least one amount is required" }))
+      const invalid = list.filter(a => !isValidAmount(a))
+      if (invalid.length) return setErrors(prev => ({ ...prev, amounts: `Invalid amount(s): ${invalid.join(", ")}` }))
 
-      const invalidAmounts = amountList.filter(a => !isValidAmount(a))
-      if (invalidAmounts.length) {
-        setErrors(prev => ({
-          ...prev,
-          amounts: `Invalid amount(s): ${invalidAmounts.join(", ")}`
-        }))
-        return
-      }
-
-      // Check balance
       if (tokenDetails.balance != null && tokenDetails.decimals != null) {
         const decimals = tokenDetails.decimals
-        const totalInWei = amountList
-          .map(a => BigInt(Math.floor(parseFloat(a) * 10 ** decimals)))
-          .reduce((acc, n) => acc + n, BigInt(0))
-
-        if (tokenDetails.balance < totalInWei) {
+        const total = list.map(a => BigInt(Math.floor(parseFloat(a) * 10 ** decimals))).reduce((acc, n) => acc + n, BigInt(0))
+        if (tokenDetails.balance < total) {
           setErrors(prev => ({
             ...prev,
-            amounts: `Insufficient balance. You have ${(Number(tokenDetails.balance) / 10 ** decimals).toFixed(4)} ${tokenDetails.symbol}, total airdrop is ${(Number(totalInWei) / 10 ** decimals).toFixed(4)}`
+            amounts: `Insufficient balance. You have ${(Number(tokenDetails.balance) / 10 ** decimals).toFixed(4)} ${tokenDetails.symbol}, total airdrop ${(Number(total) / 10 ** decimals).toFixed(4)}`
           }))
           return
         }
       }
-
       setErrors(prev => ({ ...prev, amounts: "" }))
-    }, 500)
-
+    }, 400)
     return () => clearTimeout(timer)
   }, [amounts, tokenDetails])
 
-  // ----------------- Validation for Submission -----------------
-  async function validateForm(): Promise<boolean> {
-    const newErrors = { tokenAddress: "", recipients: "", amounts: "" }
-    let isValid = true
-
-    if (!tokenAddress) {
-      newErrors.tokenAddress = "Token address is required"
-      isValid = false
-    } else if (!isValidEthereumAddress(tokenAddress)) {
-      newErrors.tokenAddress = "Invalid ERC20 token address"
-      isValid = false
-    } else {
-      const validERC20 = await isERC20(tokenAddress)
-      if (!validERC20) {
-        newErrors.tokenAddress = "Address is not a valid ERC20 token"
-        isValid = false
-      }
-    }
-
-    const recipientList = parseList(recipients)
-    if (!recipientList.length) {
-      newErrors.recipients = "At least one recipient is required"
-      isValid = false
-    } else {
-      const invalidRecipients = recipientList.filter(r => !isValidEthereumAddress(r))
-      if (invalidRecipients.length) {
-        newErrors.recipients = `Invalid address(es): ${invalidRecipients.join(", ")}`
-        isValid = false
-      }
-    }
-
-    const amountList = parseList(amounts)
-    if (!amountList.length) {
-      newErrors.amounts = "At least one amount is required"
-      isValid = false
-    } else {
-      const invalidAmounts = amountList.filter(a => !isValidAmount(a))
-      if (invalidAmounts.length) {
-        newErrors.amounts = `Invalid amount(s): ${invalidAmounts.join(", ")}`
-        isValid = false
-      }
-    }
-
-    if (recipientList.length && amountList.length && recipientList.length !== amountList.length) {
-      newErrors.amounts = `Recipients (${recipientList.length}) must match amounts (${amountList.length})`
-      isValid = false
-    }
-
-    // Check balance
-    if (isValid && tokenDetails.balance != null && tokenDetails.decimals != null) {
-      const decimals = tokenDetails.decimals
-      const totalInWei = parseList(amounts)
-        .map(a => BigInt(Math.floor(parseFloat(a) * 10 ** decimals)))
-        .reduce((acc, n) => acc + n, BigInt(0))
-
-      if (tokenDetails.balance < totalInWei) {
-        newErrors.amounts = `Insufficient balance. You have ${(Number(tokenDetails.balance) / 10 ** decimals).toFixed(4)} ${tokenDetails.symbol}, total airdrop is ${(Number(totalInWei) / 10 ** decimals).toFixed(4)}`
-        isValid = false
-      }
-    }
-
-    setErrors(newErrors)
-    return isValid
-  }
-
-  // ----------------- Contract Helpers -----------------
-  async function getApprovedAmount(spender: string | null): Promise<bigint> {
-    if (!spender) return BigInt(0)
-    try {
-      const allowance = await readContract(config, {
-        abi: erc20Abi,
-        address: tokenAddress as `0x${string}`,
-        functionName: "allowance",
-        args: [account.address!, spender],
-      })
-      return allowance as bigint
-    } catch (err) {
-      console.error("Error getting allowance:", err)
-      return BigInt(0)
-    }
-  }
-
-  async function getTokenDecimals(): Promise<number> {
-    try {
-      const dec = await readContract(config, { abi: erc20Abi, address: tokenAddress as `0x${string}`, functionName: "decimals" })
-      return Number(dec)
-    } catch (err) {
-      console.error("Error reading decimals:", err)
-      return 18
-    }
-  }
-
-  // ----------------- Submit -----------------
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    const isValid = await validateForm()
-    if (!isValid) return
-
-    setIsLoading(true)
-
-    try {
-      const tSenderAddress = chainsToTSender[chainId]?.tsender
-      if (!tSenderAddress) throw new Error("No TSender address found for this chain.")
-      if (!account.address) throw new Error("Please connect your wallet first.")
-
-      const recipientList = parseList(recipients).map(addr => getAddress(addr))
-      const decimals = await getTokenDecimals()
-      const amountList = parseList(amounts).map(amt => BigInt(Math.floor(parseFloat(amt) * 10 ** decimals)))
-      const totalInWei = amountList.reduce((acc, n) => acc + n, BigInt(0))
-
-      const approvedAmount = await getApprovedAmount(tSenderAddress)
-
-      if (approvedAmount < totalInWei) {
-        await writeContractAsync({ abi: erc20Abi, address: getAddress(tokenAddress), functionName: "approve", args: [getAddress(tSenderAddress), totalInWei] })
-      }
-
-      await writeContractAsync({
-        abi: tsenderAbi,
-        address: getAddress(tSenderAddress),
-        functionName: "airdropERC20",
-        args: [getAddress(tokenAddress), recipientList, amountList, totalInWei],
-      })
-
-      alert("🎉 Airdrop successful!")
-    } catch (err: any) {
-      console.error(err)
-      alert(`Transaction failed: ${err?.message || "Unknown error"}`)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  // ----------------- Submit Button Disabled -----------------
   const hasErrors = Object.values(errors).some(e => e)
   const isSubmitDisabled = isLoading || hasErrors || !tokenAddress || !recipients || !amounts || (tokenDetails.balance ?? 0n) === 0n
 
-  // ----------------- UI -----------------
   return (
-    <div className="max-w-3xl mx-auto p-6 bg-white rounded-lg shadow-md border border-gray-200">
-      <div className="text-center mb-8">
-        <h2 className="text-2xl font-bold text-gray-800 mb-2">ERC20 Token Airdrop</h2>
-        <p className="text-gray-600">Send tokens to multiple addresses in one transaction</p>
-      </div>
+    <div className="bg-white shadow-lg rounded-xl p-6 md:p-10 max-w-3xl mx-auto">
+      <h2 className="text-2xl font-bold text-gray-800 mb-4 text-center">ERC20 Token Airdrop</h2>
+      <p className="text-gray-600 text-center mb-6">Send tokens to multiple addresses in one transaction</p>
 
-      <form onSubmit={handleSubmit}>
-        <InputField label="Token Address" placeholder="0x..." value={tokenAddress} onChange={setTokenAddress} error={errors.tokenAddress} />
+      <form onSubmit={() => { }} className="space-y-6">
+        <InputField
+          label="Token Address"
+          placeholder="0x..."
+          value={tokenAddress}
+          onChange={setTokenAddress}
+          error={errors.tokenAddress}
+        />
 
         <InputField
-          label="Recipients (separated by commas or new lines)"
+          label="Recipients"
           placeholder={`0x742d35Cc6634C0532925a3b844Bc454e4438f44e
 0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed`}
           value={recipients}
@@ -334,7 +151,7 @@ export default function AirdropForm() {
         />
 
         <InputField
-          label="Amounts (separated by commas or new lines)"
+          label="Amounts"
           placeholder={`10.5
 25.0
 3.75`}
@@ -347,7 +164,7 @@ export default function AirdropForm() {
         <button
           type="submit"
           disabled={isSubmitDisabled}
-          className="w-full bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed shadow-sm flex items-center justify-center"
+          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
         >
           {isLoading && <span className="loader mr-2"></span>}
           {isLoading ? "Processing..." : "Send Tokens"}
@@ -355,7 +172,7 @@ export default function AirdropForm() {
       </form>
 
       {tokenAddress && tokenDetails.symbol && (
-        <div className="mt-6 p-4 border rounded-md bg-gray-50 text-gray-700">
+        <div className="mt-6 p-4 border rounded-md bg-gray-50 text-gray-700 text-sm">
           <p><strong>Token:</strong> {tokenDetails.symbol}</p>
           <p><strong>Decimals:</strong> {tokenDetails.decimals}</p>
           <p><strong>Your Balance:</strong> {tokenDetails.balance ? (Number(tokenDetails.balance) / 10 ** (tokenDetails.decimals || 18)).toFixed(4) : 0}</p>
