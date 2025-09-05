@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect } from "react"
 import InputField from "@/components/ui/inputFields"
 import { chainsToTSender, tsenderAbi, erc20Abi } from "@/constants"
 import { useChainId, useConfig, useAccount, useWriteContract } from "wagmi"
-import { readContract, waitForTransactionReceipt } from "@wagmi/core"
+import { readContract } from "@wagmi/core"
 import { getAddress } from "viem"
 import { calculateTotal } from "@/utils"
 
@@ -47,73 +47,136 @@ export default function AirdropForm() {
     )
   }, [tokenAddress, recipients, amounts])
 
-  // ----------------- Contract Reads -----------------
-  const getTokenDetails = async () => {
-    if (!isValidEthereumAddress(tokenAddress)) return
-
-    try {
-      const normalizedAddress = getAddress(tokenAddress) as `0x${string}`
-
-      const [decimals, symbol, balance] = await Promise.all([
-        readContract(config, { abi: erc20Abi, address: normalizedAddress, functionName: "decimals" }),
-        readContract(config, { abi: erc20Abi, address: normalizedAddress, functionName: "symbol" }),
-        account.address
-          ? readContract(config, { abi: erc20Abi, address: normalizedAddress, functionName: "balanceOf", args: [getAddress(account.address) as `0x${string}`] })
-          : Promise.resolve(BigInt(0))
-      ])
-
-      setTokenDetails({
-        decimals: Number(decimals),
-        symbol: String(symbol),
-        balance: balance as bigint
-      })
-    } catch (err) {
-      console.error("Error fetching token details:", err)
-    }
-  }
-
-  useEffect(() => {
-    if (tokenAddress) getTokenDetails()
-  }, [tokenAddress, account.address])
-
-  async function getApprovedAmount(spender: string | null): Promise<bigint> {
-    if (!spender) return BigInt(0)
-    try {
-      const allowance = await readContract(config, {
-        abi: erc20Abi,
-        address: tokenAddress as `0x${string}`,
-        functionName: "allowance",
-        args: [account.address!, spender],
-      })
-      return allowance as bigint
-    } catch (err) {
-      console.error("Error getting allowance:", err)
-      return BigInt(0)
-    }
-  }
-
-  async function getTokenDecimals(): Promise<number> {
-    try {
-      const dec = await readContract(config, { abi: erc20Abi, address: tokenAddress as `0x${string}`, functionName: "decimals" })
-      return Number(dec)
-    } catch (err) {
-      console.error("Error reading decimals:", err)
-      return 18
-    }
-  }
-
+  // ----------------- ERC20 Validation -----------------
   async function isERC20(address: string) {
+    if (!isValidEthereumAddress(address)) return false
     try {
-      const dec = await readContract(config, { abi: erc20Abi, address: address as `0x${string}`, functionName: "decimals" })
-      const sym = await readContract(config, { abi: erc20Abi, address: address as `0x${string}`, functionName: "symbol" })
-      return typeof dec === "number" && typeof sym === "string"
+      const [decimals, symbol] = await Promise.all([
+        readContract(config, { abi: erc20Abi, address: address as `0x${string}`, functionName: "decimals" }),
+        readContract(config, { abi: erc20Abi, address: address as `0x${string}`, functionName: "symbol" }),
+      ])
+      return typeof decimals === "number" && typeof symbol === "string"
     } catch {
       return false
     }
   }
 
+  // ----------------- Live Validation -----------------
+  // Token Address
+  useEffect(() => {
+    if (!tokenAddress) {
+      setErrors(prev => ({ ...prev, tokenAddress: "" }))
+      setTokenDetails({})
+      return
+    }
 
-  // ----------------- Validation -----------------
+    const timer = setTimeout(async () => {
+      if (!isValidEthereumAddress(tokenAddress)) {
+        setErrors(prev => ({ ...prev, tokenAddress: "Invalid address format" }))
+        setTokenDetails({})
+        return
+      }
+
+      const validERC20 = await isERC20(tokenAddress)
+      setErrors(prev => ({
+        ...prev,
+        tokenAddress: validERC20 ? "" : "Address is not a valid ERC20 token"
+      }))
+
+      if (validERC20 && account.address) {
+        try {
+          const normalizedAddress = getAddress(tokenAddress) as `0x${string}`
+          const [decimals, symbol, balance] = await Promise.all([
+            readContract(config, { abi: erc20Abi, address: normalizedAddress, functionName: "decimals" }),
+            readContract(config, { abi: erc20Abi, address: normalizedAddress, functionName: "symbol" }),
+            readContract(config, { abi: erc20Abi, address: normalizedAddress, functionName: "balanceOf", args: [getAddress(account.address) as `0x${string}`] })
+          ])
+          setTokenDetails({ decimals: Number(decimals), symbol: String(symbol), balance: balance as bigint })
+        } catch (err) {
+          console.error("Error fetching token details:", err)
+          setTokenDetails({})
+        }
+      } else {
+        setTokenDetails({})
+      }
+
+    }, 500)
+
+    return () => clearTimeout(timer)
+  }, [tokenAddress, account.address])
+
+  // Recipients
+  useEffect(() => {
+    if (!recipients) {
+      setErrors(prev => ({ ...prev, recipients: "" }))
+      return
+    }
+
+    const timer = setTimeout(() => {
+      const recipientList = parseList(recipients)
+      if (!recipientList.length) {
+        setErrors(prev => ({ ...prev, recipients: "At least one recipient is required" }))
+        return
+      }
+
+      const invalidRecipients = recipientList.filter(r => !isValidEthereumAddress(r))
+      setErrors(prev => ({
+        ...prev,
+        recipients: invalidRecipients.length
+          ? `Invalid address(es): ${invalidRecipients.join(", ")}`
+          : ""
+      }))
+    }, 500)
+
+    return () => clearTimeout(timer)
+  }, [recipients])
+
+  // Amounts
+  useEffect(() => {
+    if (!amounts) {
+      setErrors(prev => ({ ...prev, amounts: "" }))
+      return
+    }
+
+    const timer = setTimeout(() => {
+      const amountList = parseList(amounts)
+      if (!amountList.length) {
+        setErrors(prev => ({ ...prev, amounts: "At least one amount is required" }))
+        return
+      }
+
+      const invalidAmounts = amountList.filter(a => !isValidAmount(a))
+      if (invalidAmounts.length) {
+        setErrors(prev => ({
+          ...prev,
+          amounts: `Invalid amount(s): ${invalidAmounts.join(", ")}`
+        }))
+        return
+      }
+
+      // Check balance
+      if (tokenDetails.balance != null && tokenDetails.decimals != null) {
+        const decimals = tokenDetails.decimals
+        const totalInWei = amountList
+          .map(a => BigInt(Math.floor(parseFloat(a) * 10 ** decimals)))
+          .reduce((acc, n) => acc + n, BigInt(0))
+
+        if (tokenDetails.balance < totalInWei) {
+          setErrors(prev => ({
+            ...prev,
+            amounts: `Insufficient balance. You have ${(Number(tokenDetails.balance) / 10 ** decimals).toFixed(4)} ${tokenDetails.symbol}, total airdrop is ${(Number(totalInWei) / 10 ** decimals).toFixed(4)}`
+          }))
+          return
+        }
+      }
+
+      setErrors(prev => ({ ...prev, amounts: "" }))
+    }, 500)
+
+    return () => clearTimeout(timer)
+  }, [amounts, tokenDetails])
+
+  // ----------------- Validation for Submission -----------------
   async function validateForm(): Promise<boolean> {
     const newErrors = { tokenAddress: "", recipients: "", amounts: "" }
     let isValid = true
@@ -124,14 +187,13 @@ export default function AirdropForm() {
     } else if (!isValidEthereumAddress(tokenAddress)) {
       newErrors.tokenAddress = "Invalid ERC20 token address"
       isValid = false
+    } else {
+      const validERC20 = await isERC20(tokenAddress)
+      if (!validERC20) {
+        newErrors.tokenAddress = "Address is not a valid ERC20 token"
+        isValid = false
+      }
     }
-
-    const erc20Valid = await isERC20(tokenAddress)
-    if (!erc20Valid) {
-      newErrors.tokenAddress = "Address is not a valid ERC20 token"
-      isValid = false
-    }
-
 
     const recipientList = parseList(recipients)
     if (!recipientList.length) {
@@ -162,14 +224,53 @@ export default function AirdropForm() {
       isValid = false
     }
 
+    // Check balance
+    if (isValid && tokenDetails.balance != null && tokenDetails.decimals != null) {
+      const decimals = tokenDetails.decimals
+      const totalInWei = parseList(amounts)
+        .map(a => BigInt(Math.floor(parseFloat(a) * 10 ** decimals)))
+        .reduce((acc, n) => acc + n, BigInt(0))
+
+      if (tokenDetails.balance < totalInWei) {
+        newErrors.amounts = `Insufficient balance. You have ${(Number(tokenDetails.balance) / 10 ** decimals).toFixed(4)} ${tokenDetails.symbol}, total airdrop is ${(Number(totalInWei) / 10 ** decimals).toFixed(4)}`
+        isValid = false
+      }
+    }
+
     setErrors(newErrors)
     return isValid
+  }
+
+  // ----------------- Contract Helpers -----------------
+  async function getApprovedAmount(spender: string | null): Promise<bigint> {
+    if (!spender) return BigInt(0)
+    try {
+      const allowance = await readContract(config, {
+        abi: erc20Abi,
+        address: tokenAddress as `0x${string}`,
+        functionName: "allowance",
+        args: [account.address!, spender],
+      })
+      return allowance as bigint
+    } catch (err) {
+      console.error("Error getting allowance:", err)
+      return BigInt(0)
+    }
+  }
+
+  async function getTokenDecimals(): Promise<number> {
+    try {
+      const dec = await readContract(config, { abi: erc20Abi, address: tokenAddress as `0x${string}`, functionName: "decimals" })
+      return Number(dec)
+    } catch (err) {
+      console.error("Error reading decimals:", err)
+      return 18
+    }
   }
 
   // ----------------- Submit -----------------
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-
     const isValid = await validateForm()
     if (!isValid) return
 
@@ -187,12 +288,10 @@ export default function AirdropForm() {
 
       const approvedAmount = await getApprovedAmount(tSenderAddress)
 
-      // Approve if needed
       if (approvedAmount < totalInWei) {
         await writeContractAsync({ abi: erc20Abi, address: getAddress(tokenAddress), functionName: "approve", args: [getAddress(tSenderAddress), totalInWei] })
       }
 
-      // Execute airdrop
       await writeContractAsync({
         abi: tsenderAbi,
         address: getAddress(tSenderAddress),
@@ -208,6 +307,10 @@ export default function AirdropForm() {
       setIsLoading(false)
     }
   }
+
+  // ----------------- Submit Button Disabled -----------------
+  const hasErrors = Object.values(errors).some(e => e)
+  const isSubmitDisabled = isLoading || hasErrors || !tokenAddress || !recipients || !amounts || (tokenDetails.balance ?? 0n) === 0n
 
   // ----------------- UI -----------------
   return (
@@ -243,7 +346,7 @@ export default function AirdropForm() {
 
         <button
           type="submit"
-          disabled={isLoading}
+          disabled={isSubmitDisabled}
           className="w-full bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed shadow-sm flex items-center justify-center"
         >
           {isLoading && <span className="loader mr-2"></span>}
