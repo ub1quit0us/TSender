@@ -70,6 +70,7 @@ export default function AirdropForm() {
       }
       const validERC20 = await isERC20(tokenAddress)
       setErrors(prev => ({ ...prev, tokenAddress: validERC20 ? "" : "Address is not a valid ERC20 token" }))
+
       if (validERC20 && account.address) {
         try {
           const normalizedAddress = getAddress(tokenAddress) as `0x${string}`
@@ -123,6 +124,60 @@ export default function AirdropForm() {
     return () => clearTimeout(timer)
   }, [amounts, tokenDetails])
 
+  // ----------------- Submit -----------------
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    if (isSubmitDisabled) return
+
+    setIsLoading(true) // ✅ must be first
+
+    try {
+      if (!account.address) throw new Error("Connect wallet first")
+      const tSenderAddress = chainsToTSender[chainId]?.tsender
+      if (!tSenderAddress) throw new Error("No TSender for this chain")
+
+      const recipientList = parseList(recipients).map(addr => getAddress(addr))
+      const decimals = tokenDetails.decimals || 18
+      const amountList = parseList(amounts).map(amt => BigInt(Math.floor(parseFloat(amt) * 10 ** decimals)))
+      const totalInWei = amountList.reduce((acc, n) => acc + n, BigInt(0))
+
+      // Check allowance
+      const allowance = await readContract(config, {
+        abi: erc20Abi,
+        address: getAddress(tokenAddress),
+        functionName: "allowance",
+        args: [account.address!, tSenderAddress]
+      }) as bigint
+
+      if (allowance < totalInWei) {
+        // Approve first
+        await writeContractAsync({
+          abi: erc20Abi,
+          address: getAddress(tokenAddress),
+          functionName: "approve",
+          args: [tSenderAddress, totalInWei]
+        })
+      }
+
+      // Execute airdrop
+      await writeContractAsync({
+        abi: tsenderAbi,
+        address: getAddress(tSenderAddress),
+        functionName: "airdropERC20",
+        args: [getAddress(tokenAddress), recipientList, amountList, totalInWei]
+      })
+
+      alert("🎉 Airdrop successful!")
+    } catch (err: any) {
+      console.error(err)
+      alert(`Transaction failed: ${err?.message || "Unknown error"}`)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+
   const hasErrors = Object.values(errors).some(e => e)
   const isSubmitDisabled = isLoading || hasErrors || !tokenAddress || !recipients || !amounts || (tokenDetails.balance ?? 0n) === 0n
 
@@ -131,7 +186,7 @@ export default function AirdropForm() {
       <h2 className="text-2xl font-bold text-gray-800 mb-4 text-center">ERC20 Token Airdrop</h2>
       <p className="text-gray-600 text-center mb-6">Send tokens to multiple addresses in one transaction</p>
 
-      <form onSubmit={() => { }} className="space-y-6">
+      <form onSubmit={handleSubmit} className="space-y-6">
         <InputField
           label="Token Address"
           placeholder="0x..."
@@ -164,11 +219,37 @@ export default function AirdropForm() {
         <button
           type="submit"
           disabled={isSubmitDisabled}
-          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
         >
-          {isLoading && <span className="loader mr-2"></span>}
-          {isLoading ? "Processing..." : "Send Tokens"}
+          {/* Spinner */}
+          {isLoading && (
+            <svg
+              className="animate-spin h-5 w-5 text-white"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+              ></circle>
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+              ></path>
+            </svg>
+          )}
+
+          {/* Button text */}
+          <span>{isLoading ? "Processing..." : "Send Tokens"}</span>
         </button>
+
+
       </form>
 
       {tokenAddress && tokenDetails.symbol && (
