@@ -11,11 +11,9 @@ export default function Page() {
       {isConnected ? (
         <HomeContent />
       ) : (
+        // If you want *no* text at all, replace this block with: null
         <div className="text-center text-gray-600 mt-20">
-          <h1 className="text-2xl font-bold text-gray-800">🔌 Connect Your Wallet</h1>
-          <p className="mt-2 text-gray-500">
-            Please connect your wallet to start using <span className="font-semibold">TSender</span>.
-          </p>
+          <p>Connect your wallet to continue.</p>
         </div>
       )}
     </div>
