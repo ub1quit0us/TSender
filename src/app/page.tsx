@@ -11,7 +11,6 @@ export default function Page() {
       {isConnected ? (
         <HomeContent />
       ) : (
-        // If you want *no* text at all, replace this block with: null
         <div className="text-center text-gray-600 mt-20">
           <p>Connect your wallet to continue.</p>
         </div>

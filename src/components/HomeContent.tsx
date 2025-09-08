@@ -1,3 +1,5 @@
+"use client"
+
 import AirdropForm from "./airdropForm"
 
 export default function HomeContent() {
