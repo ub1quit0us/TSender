@@ -1,4 +1,4 @@
-"use client";
+"use client"
 
 interface InputFieldProps {
   label: string;
@@ -17,9 +17,8 @@ export default function InputField({
   error,
   type = 'text'
 }: InputFieldProps) {
-  const commonClasses = `w-full px-4 py-3 border rounded-md focus:ring-2 focus:ring-blue-600 focus:border-blue-600 outline-none transition-colors text-gray-900 placeholder-gray-500 ${
-    error ? 'border-red-600 bg-red-50' : 'border-gray-300 hover:border-gray-400'
-  }`;
+  const commonClasses = `w-full px-4 py-3 border rounded-md focus:ring-2 focus:ring-blue-600 focus:border-blue-600 outline-none transition-colors text-gray-900 placeholder-gray-500 ${error ? 'border-red-600 bg-red-50' : 'border-gray-300 hover:border-gray-400'
+    }`;
 
   return (
     <div className="mb-6">
