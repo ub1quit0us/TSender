@@ -6,6 +6,6 @@ import { mainnet, polygon, optimism, arbitrum, base, anvil, sonic } from 'wagmi/
 export default getDefaultConfig({
   appName: 'TSender',
   projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID!,
-  chains: [mainnet, anvil],
+  chains: [anvil],
   ssr: false
 });
